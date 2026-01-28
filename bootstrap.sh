@@ -5,8 +5,8 @@
 
 # wget -O "$HOME/bootstrap.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap.sh?nocache=$(date +%s)"
 
-user_name='a'
 script_name="$(basename "$0")"
+user_name=$USER
 
 ############
 # Functions
@@ -24,19 +24,28 @@ if [ "$script_name" = "bootstrap.sh" ]; then
         exec pkexec bash "$0" "$@"
     fi
 
+    user_name="$(id -un "$PKEXEC_UID")"
+
     #######
     # Sudo
 
-    usermod -aG sudo "$user_name"
+    usermod -aG sudo $user_name
+
+    #########
+    # Update
+
+    apt update
+    apt upgrade -y
 
     ##########
     # Network
 
-    systemctl enable systemd-networkd --now
-    systemctl disable NetworkManager --now
+    apt install systemd-resolved -y
 
-    write_c "nameserver 9.9.9.9
-             search ." /etc/resolv.conf
+    systemctl enable systemd-networkd --now
+    systemctl enable systemd-resolved --now
+
+    systemctl disable NetworkManager --now
 
     write_c "[Match]
              Name=eth0
@@ -47,8 +56,7 @@ if [ "$script_name" = "bootstrap.sh" ]; then
              [Network]
              LinkLocalAddressing=no
              IPv6AcceptRA=no
-             DHCP=ipv4
-             #DNS=9.9.9.9" /etc/systemd/network/00-eth0.network
+             DHCP=ipv4" /etc/systemd/network/00-eth0.network
 
     systemctl restart systemd-networkd
 
@@ -62,11 +70,8 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
     sysctl --system
 
-    ##########
-    # Install
-
-    apt update
-    apt upgrade -y
+    ########
+    # Stuff
 
     apt install -y \
       nala xrdp \
@@ -160,25 +165,20 @@ else
 
       # Init
       set -Ux DF_NAME "d1-1b"
-      set -Ux DF_ORIGIN "git@github.com:$DF_NAME/dotfiles.git"
+      set -Ux DF_MAIL "255606277+d1-1b@users.noreply.github.com"
+      set -Ux DF_ORIGIN "git@github.com:d1-1b/dotfiles.git"
       set -Ux DF_REPO ~/.local/share/d13
 
       # Set username
       git config --global user.name "$DF_NAME"
 
-      # Ensure anon value exists
-      if not set -q DF_ANON
-          read -P "Github anon value: " -l tmp
-          set -Ux DF_ANON $tmp
-      end
-
       # Set E-mail
-      git config --global user.email "$DF_ANON+$DF_NAME@users.noreply.github.com"
+      git config --global user.email "$DF_MAIL"
 
       # Create ssh key
       if not test -f ~/.ssh/id_ed25519.pub
 
-          ssh-keygen -t ed25519 -C "$DF_ANON+$DF_NAME@users.noreply.github.com"
+          ssh-keygen -t ed25519 -C "$DF_MAIL"
           cat ~/.ssh/id_ed25519.pub
           read -P "Press Enter to continue: "
 
