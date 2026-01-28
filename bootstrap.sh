@@ -6,7 +6,6 @@
 # wget -O "$HOME/bootstrap.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap.sh?nocache=$(date +%s)"
 
 script_name="$(basename "$0")"
-user_name=$USER
 
 ############
 # Functions
@@ -206,7 +205,7 @@ else
 
           ssh-keygen -t ed25519 -C "$DF_MAIL"
           cat ~/.ssh/id_ed25519.pub
-          read -P "Press Enter to continue: "
+          read -r -P "Press Enter to continue: " _
 
           ssh -o StrictHostKeyChecking=accept-new -T git@github.com; or true
       end
@@ -218,13 +217,15 @@ else
       source "$DF_REPO/.setup/dotfiles.fish"
 
       # Initial sync
-      sync_from_repo
+      pull
     '
 
     #######
     # Fish
 
-    chsh -s /usr/bin/fish "$USER"
+    if [ "$SHELL" != "/usr/bin/fish" ]; then
+        chsh -s /usr/bin/fish "$USER"
+    fi
 
     read -r -p "Press Enter to logout: " _
     xfce4-session-logout -l
