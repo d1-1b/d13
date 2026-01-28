@@ -59,6 +59,11 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
     systemctl restart systemd-networkd
 
+    sed -i 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' /etc/systemd/resolved.conf
+    sed -i 's/^\s*#\?\s*LLMNR=.*/LLMNR=no/' /etc/systemd/resolved.conf
+
+    systemctl restart systemd-resolved
+
     write_c "net.ipv6.conf.all.disable_ipv6 = 1
              net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf
 
@@ -73,12 +78,12 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     # Stuff
 
     apt install -y \
-      nala xrdp \
+      nala ncdu xclip \
       fish fzf fd-find eza bat chafa hexyl \
       btop iftop mtr-tiny fonts-noto-color-emoji \
       tty-clock screenfetch cmatrix cbonsai \
-      ncdu xclip viewnior \
-      git rsync
+      git rsync \
+      xrdp viewnior \
 
     fc-cache -f
 
