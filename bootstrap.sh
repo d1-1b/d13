@@ -40,7 +40,7 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     ##########
     # Network
 
-    apt install systemd-resolved -y
+    apt install -y systemd-resolved
 
     systemctl enable systemd-networkd --now
     systemctl enable systemd-resolved --now
@@ -158,6 +158,32 @@ else
     # Clear panel defaults
     rm -rf ~/.config/xfce4/panel
 
+    ########
+    # Fonts
+
+    mkdir -p ~/.local/share/fonts
+    wget -O Hack.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip
+    unzip -oq Hack.zip 'HackNerdFont-Regular.ttf' -d ~/.local/share/fonts
+    unzip -oq Hack.zip 'HackNerdFontMono-Regular.ttf' -d ~/.local/share/fonts
+    rm Hack.zip
+    fc-cache -f
+
+    #########
+    # Themes
+
+    mkdir -p ~/.themes
+    wget -O Sweet.tar.xz https://github.com/EliverLara/Sweet/releases/download/v6.0/Sweet-mars-v40.tar.xz
+    tar -xf Sweet.tar.xz -C ~/.themes
+    rm Sweet.tar.xz
+
+    mkdir -p ~/.icons
+    wget -O candy.zip https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip
+    unzip -oq candy.zip -d ~/.icons
+    mv ~/.icons/candy-icons-master ~/.icons/candy-icons
+    rm candy.zip
+
+    gtk-update-icon-cache -f ~/.icons/candy-icons
+
     #########
     # Github
 
@@ -194,32 +220,6 @@ else
       # Initial sync
       sync_from_repo
     '
-
-    ########
-    # Fonts
-
-    mkdir -p ~/.local/share/fonts
-    wget -O Hack.zip https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip
-    unzip -o Hack.zip 'HackNerdFont-Regular.ttf' -d ~/.local/share/fonts
-    unzip -o Hack.zip 'HackNerdFontMono-Regular.ttf' -d ~/.local/share/fonts
-    rm Hack.zip
-    fc-cache -f
-
-    #########
-    # Themes
-
-    mkdir -p ~/.themes
-    wget -O Sweet.tar.xz https://github.com/EliverLara/Sweet/releases/download/v6.0/Sweet-mars-v40.tar.xz
-    tar -xf Sweet.tar.xz -C ~/.themes
-    rm Sweet.tar.xz
-
-    mkdir -p ~/.icons
-    wget -O candy.zip https://github.com/EliverLara/candy-icons/archive/refs/heads/master.zip
-    unzip -o candy.zip -d ~/.icons
-    mv ~/.icons/candy-icons-master ~/.icons/candy-icons
-    rm candy.zip
-
-    gtk-update-icon-cache -f ~/.icons/candy-icons
 
     #######
     # Fish
