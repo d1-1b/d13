@@ -59,6 +59,76 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
     systemctl restart systemd-networkd
 
+cat > /etc/nftables.conf << 'EOF'
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table inet filter {
+
+    # --- Services ---
+    set br0_services {
+        type ifname . inet_proto . inet_service;
+        flags constant;
+        elements = {
+            "eth0" . tcp . 22,
+        }
+    }
+
+    # --- INPUT ---
+    chain input {
+        type filter hook input priority filter;
+        policy drop;
+
+        # Loopback
+        iif "lo" accept
+
+        # ICMP echo-request ratelimit
+        icmp type echo-request limit rate over 10/second burst 20 packets counter drop
+
+        # ICMP
+        ip protocol icmp accept
+
+        # Connection tracking
+        ct state established,related accept
+        ct state invalid drop
+
+        # Services
+        (iifname . ip protocol . th dport) @br0_services accept
+    }
+
+    # --- OUTPUT ---
+    chain output {
+        type filter hook output priority filter;
+        policy accept;
+    }
+
+    # --- FORWARD ---
+    chain forward {
+        type filter hook forward priority filter;
+        policy drop;
+    }
+}
+
+table ip nat {
+
+    # --- PRE-ROUTING ---
+    chain prerouting {
+        type nat hook prerouting priority dstnat;
+    }
+
+    # --- POST-ROUTING ---
+    chain postrouting {
+        type nat hook postrouting priority srcnat;
+
+        # Masquerade (dynamic SNAT)
+        #oifname "eth_" masquerade
+    }
+}
+EOF
+
+    systemctl reload nftables
+
     sed -i 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' /etc/systemd/resolved.conf
     sed -i 's/^\s*#\?\s*LLMNR=.*/LLMNR=no/' /etc/systemd/resolved.conf
 
