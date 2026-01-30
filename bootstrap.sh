@@ -67,7 +67,7 @@ flush ruleset
 table inet filter {
 
     # --- Services ---
-    set br0_services {
+    set services {
         type ifname . inet_proto . inet_service;
         flags constant;
         elements = {
@@ -94,7 +94,7 @@ table inet filter {
         ct state invalid drop
 
         # Services
-        (iifname . ip protocol . th dport) @br0_services accept
+        iifname . ip protocol . th dport @services accept
     }
 
     # --- OUTPUT ---
@@ -262,7 +262,6 @@ else
     # Github
 
     fish -c '
-
       # Init
       set -Ux DF_NAME "d1-1b"
       set -Ux DF_MAIL "255606277+d1-1b@users.noreply.github.com"
@@ -281,11 +280,16 @@ else
       # Clone repo
       git clone "$DF_ORIGIN" "$DF_REPO"
 
+      if not git -C "$DF_REPO" rev-parse HEAD >/dev/null 2>&1
+          echo "❌ Clone failed — aborting bootstrap."
+          exit 1
+      end
+
       # Load dotfiles
       source "$DF_REPO/.setup/dotfiles.fish"
 
       # Initial sync
-      pull
+      sync_from_repo
     '
 
     #######
