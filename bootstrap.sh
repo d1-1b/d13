@@ -146,7 +146,7 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
     mv "$0" "/home/$user_name/configure.sh"
 
-    read -r -p "Press Enter to poweroff: " _
+    read -p "Press Enter to poweroff: " _
     systemctl poweroff
 
 else
@@ -210,7 +210,7 @@ else
 
           ssh-keygen -t ed25519 -C "$DF_MAIL"
           cat ~/.ssh/id_ed25519.pub
-          read -r -P "Press Enter to continue: " _
+          read -p "Press Enter to continue: " _
 
           ssh -o StrictHostKeyChecking=accept-new -T git@github.com; or true
       end
@@ -232,6 +232,6 @@ else
         chsh -s /usr/bin/fish "$USER"
     fi
 
-    read -r -p "Press Enter to logout: " _
+    read -p "Press Enter to logout: " _
     xfce4-session-logout -l
 fi
