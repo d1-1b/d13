@@ -196,7 +196,7 @@ else
       # Init
       set -Ux DF_NAME "d1-1b"
       set -Ux DF_MAIL "255606277+d1-1b@users.noreply.github.com"
-      set -Ux DF_ORIGIN "git@github.com:d1-1b/dotfiles.git"
+      set -Ux DF_ORIGIN "https://d1-1b@github.com/d1-1b/dotfiles.git"
       set -Ux DF_REPO ~/.local/share/d13
 
       # Set username
@@ -205,15 +205,8 @@ else
       # Set E-mail
       git config --global user.email "$DF_MAIL"
 
-      # Create ssh key
-      if not test -f ~/.ssh/id_ed25519.pub
-
-          ssh-keygen -t ed25519 -C "$DF_MAIL"
-          cat ~/.ssh/id_ed25519.pub
-          read -p "Press Enter to continue: " _
-
-          ssh -o StrictHostKeyChecking=accept-new -T git@github.com; or true
-      end
+      # Enable credential storage
+      git config --global credential.helper store
 
       # Clone repo
       git clone "$DF_ORIGIN" "$DF_REPO"
