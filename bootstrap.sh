@@ -168,23 +168,11 @@ EOF
 
     sysctl --system
 
-    #######################
-    # Filesystem Hardening
-
-    # --- Harden root filesystem: add nodev,nosuid ---
-    sed -i 's|\(\s*/\s\+ext4\s\+\)\([^ ]*\)|\1\2,nodev,nosuid|' /etc/fstab
-
-    # --- Harden /boot/efi: add noexec,nodev,nosuid ---
-    sed -i 's|\(\s*/boot/efi\s\+vfat\s\+\)\([^ ]*\)|\1\2,noexec,nodev,nosuid|' /etc/fstab
-
-    systemctl daemon-reload
-
     ########
     # Stuff
 
     apt install -y \
       nala git rsync \
-      apparmor-utils \
       xrdp ncdu viewnior \
       fish fzf fd-find eza bat chafa hexyl \
       btop iftop mtr-tiny fonts-noto-color-emoji \
@@ -236,14 +224,6 @@ EOF
       /etc/ssh/sshd_config
 
     systemctl restart sshd
-
-    ############
-    # Apparmour
-
-    aa-enforce tcpdump
-    aa-enforce unix_chkpwd
-    aa-enforce unprivileged_userns
-    aa-enforce xorg
 
     #######
     # Boot
