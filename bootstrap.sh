@@ -132,34 +132,136 @@ EOF
     write_c "net.ipv6.conf.all.disable_ipv6 = 1
              net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf
 
-    #############
-    # Heardening
+    #########
+    # Sysctl
 
-    # --- Disable IPv6 router advertisements --
-    write_c "net.ipv6.conf.all.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6-router-adv.conf
+cat > /etc/sysctl.d/99-network-hardening.conf << 'EOF'
+# https://github.com/jeffbencteux/sysctlchk/blob/main/refs/all.conf
 
-    # --- Network ---
-    write_c "net.ipv4.conf.all.rp_filter = 1
-             net.ipv4.conf.default.rp_filter = 1
-             net.ipv4.conf.all.accept_redirects = 0
-             net.ipv4.conf.default.accept_redirects = 0
-             net.ipv4.conf.all.send_redirects = 0
-             net.ipv4.conf.default.send_redirects = 0
-             net.ipv6.conf.all.accept_redirects = 0
-             net.ipv6.conf.default.accept_redirects = 0" /etc/sysctl.d/99-network-hardening.conf
+# Filter by reverse-path (source validation)
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
 
-    # --- Disable source routing ---
-    write_c "net.ipv4.conf.all.accept_source_route = 0
-             net.ipv4.conf.default.accept_source_route = 0
-             net.ipv6.conf.all.accept_source_route = 0
-             net.ipv6.conf.default.accept_source_route = 0" /etc/sysctl.d/99-disable-source-routing.conf
+# No ICMP redirection messages
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
 
-    # --- Kernel ---
-    write_c "kernel.kptr_restrict = 2
-             kernel.dmesg_restrict = 1
-             kernel.yama.ptrace_scope = 2
-             kernel.kexec_load_disabled = 1
-             kernel.randomize_va_space = 2" /etc/sysctl.d/99-kernel-hardening.conf
+# No ICMP response to broadcast
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+# Refuse source-routing packets
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+
+# Refuse ICMP redirect messages
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.all.shared_media = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.conf.default.shared_media = 0
+
+# Consider as invalid packets coming from external machines with source IP in 127.0.0.0/8 network
+net.ipv4.conf.all.accept_local = 0
+
+# Do not route packets with source or destination addresses in 127.0.0.0/8 network
+net.ipv4.conf.all.route_localnet = 0
+
+# Log packets with abnormal IP addresses
+net.ipv4.conf.all.log_martians = 1
+
+# RFC 1337: protection against TCP time-wait assassination
+net.ipv4.tcp_rfc1337 = 1
+
+# Ignore RFC1122 non-compliant answers
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+
+# Broader range for ephemeral ports
+net.ipv4.ip_local_port_range = 32768 65535
+
+# Use SYN cookies
+net.ipv4.tcp_syncookies = 1
+
+# Increase size of received SYN segments (protection against SYN flooding)
+net.ipv4.tcp_max_syn_backlog = 4096
+
+# Disable IPv6 router solicitations
+net.ipv6.conf.all.router_solicitations = 0
+net.ipv6.conf.default.router_solicitations = 0
+
+# Do not accept IPv6 router preferences given by router advertisements
+net.ipv6.conf.all.accept_ra_rtr_pref = 0
+net.ipv6.conf.default.accept_ra_rtr_pref = 0
+
+# Do not accept auto prefix given by router advertisements
+net.ipv6.conf.all.accept_ra_pinfo = 0
+net.ipv6.conf.default.accept_ra_pinfo = 0
+
+# Do not auto-learn via router advertisements
+net.ipv6.conf.all.accept_ra_defrtr = 0
+net.ipv6.conf.default.accept_ra_defrtr = 0
+
+# No auto-configuration of IPv6 addresses via router advertisements
+net.ipv6.conf.all.autoconf = 0
+net.ipv6.conf.default.autoconf = 0
+
+# Do not accept ICMPv6 redirects
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+
+# Do not accept IPv6 source routing packets
+net.ipv6.conf.all.accept_source_route = 0
+net.ipv6.conf.default.accept_source_route = 0
+
+# Reduce the number of IPv6 addresses per interface
+net.ipv6.conf.all.max_addresses = 1
+net.ipv6.conf.default.max_addresses = 1
+EOF
+
+cat > /etc/sysctl.d/99-system-hardening.conf << 'EOF'
+# https://github.com/jeffbencteux/sysctlchk/blob/main/refs/all.conf
+
+# Disallow kernel profiling by users without CAP_SYS_ADMIN
+kernel.perf_event_paranoid = 2
+
+# Disable sysrq (see here https://www.kernel.org/doc/Documentation/admin-guide/sysrq.rst)
+kernel.sysrq = 0
+
+# ASLR
+kernel.randomize_va_space = 2
+
+# Restrict kernel buffer read access
+kernel.dmesg_restrict = 1
+
+# Restrict access to kernel pointers in the proc filesystem
+kernel.kptr_restrict = 2
+
+# Explicitely set the kernel PID namespace size (setting it to PID_MAX_LIMIT: 2^22)
+kernel.pid_max = 4194304
+
+# Restrict BPF programs to privileged users
+kernel.unprivileged_bpf_disabled = 1
+
+# Set JIT BPF hardening, mitigates some JIT spraying attacks
+net.core.bpf_jit_harden = 2
+
+# Disable kexec. Avoid to replace and reload the kernel without going through the bootloader
+kernel.kexec_load_disabled = 1
+
+# Strict rules on writing sysctl files
+kernel.sysctl_writes_strict = 1
+
+# Disable coredumps of SUID binaries
+fs.suid_dumpable = 0
+
+# Avoid certain TOCTOU attacks on files
+fs.protected_hardlinks = 1
+fs.protected_symlinks = 1
+
+# Avoid unitentionnal writes to attacker-controlled FIFOs and files value could also be 2
+fs.protected_fifos = 1
+fs.protected_regular = 1
+EOF
 
     ##########
     # Watches
@@ -190,7 +292,7 @@ EOF
 
     # sublime
     wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
-      | gpg --dearmor > /usr/share/keyrings/sublimehq-archive.gpg
+         | gpg --dearmor > /usr/share/keyrings/sublimehq-archive.gpg
 
     write_c "deb [signed-by=/usr/share/keyrings/sublimehq-archive.gpg] https://download.sublimetext.com/ apt/stable/" \
             /etc/apt/sources.list.d/sublime-text.list
