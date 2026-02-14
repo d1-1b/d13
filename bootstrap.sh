@@ -51,6 +51,8 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
              [DHCP]
              UseDNS=yes
+             UseGateway=yes
+             UseRoutes=yes
 
              [Network]
              LinkLocalAddressing=no
@@ -75,6 +77,12 @@ table inet filter {
         }
     }
 
+    # --- PRE-ROUTING ---
+    # --- DNAT / redirect ---
+    chain prerouting {
+        type nat hook prerouting priority dstnat;
+    }
+
     # --- INPUT ---
     chain input {
         type filter hook input priority filter;
@@ -82,9 +90,6 @@ table inet filter {
 
         # Loopback
         iif "lo" accept
-
-        # ICMP echo-request ratelimit
-        icmp type echo-request limit rate over 10/second burst 20 packets counter drop
 
         # ICMP
         ip protocol icmp accept
@@ -94,7 +99,13 @@ table inet filter {
         ct state invalid drop
 
         # Services
-        iifname . ip protocol . th dport @services accept
+        iifname . ip protocol . th dport @br0_services accept
+    }
+
+    # --- FORWARD ---
+    chain forward {
+        type filter hook forward priority filter;
+        policy drop;
     }
 
     # --- OUTPUT ---
@@ -103,26 +114,10 @@ table inet filter {
         policy accept;
     }
 
-    # --- FORWARD ---
-    chain forward {
-        type filter hook forward priority filter;
-        policy drop;
-    }
-}
-
-table ip nat {
-
-    # --- PRE-ROUTING ---
-    chain prerouting {
-        type nat hook prerouting priority dstnat;
-    }
-
     # --- POST-ROUTING ---
+    # --- SNAT / masquerade ---
     chain postrouting {
         type nat hook postrouting priority srcnat;
-
-        # Masquerade (dynamic SNAT)
-        #oifname "eth_" masquerade
     }
 }
 EOF
@@ -137,6 +132,35 @@ EOF
     write_c "net.ipv6.conf.all.disable_ipv6 = 1
              net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf
 
+    #############
+    # Heardening
+
+    # --- Disable IPv6 router advertisements --
+    write_c "net.ipv6.conf.all.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6-router-adv.conf
+
+    # --- Network ---
+    write_c "net.ipv4.conf.all.rp_filter = 1
+             net.ipv4.conf.default.rp_filter = 1
+             net.ipv4.conf.all.accept_redirects = 0
+             net.ipv4.conf.default.accept_redirects = 0
+             net.ipv4.conf.all.send_redirects = 0
+             net.ipv4.conf.default.send_redirects = 0
+             net.ipv6.conf.all.accept_redirects = 0
+             net.ipv6.conf.default.accept_redirects = 0" /etc/sysctl.d/99-network-hardening.conf
+
+    # --- Disable source routing ---
+    write_c "net.ipv4.conf.all.accept_source_route = 0
+             net.ipv4.conf.default.accept_source_route = 0
+             net.ipv6.conf.all.accept_source_route = 0
+             net.ipv6.conf.default.accept_source_route = 0" /etc/sysctl.d/99-disable-source-routing.conf
+
+    # --- Kernel ---
+    write_c "kernel.kptr_restrict = 2
+             kernel.dmesg_restrict = 1
+             kernel.yama.ptrace_scope = 2
+             kernel.kexec_load_disabled = 1
+             kernel.randomize_va_space = 2" /etc/sysctl.d/99-kernel-hardening.conf
+
     ##########
     # Watches
 
@@ -144,16 +168,27 @@ EOF
 
     sysctl --system
 
+    #######################
+    # Filesystem Hardening
+
+    # --- Harden root filesystem: add nodev,nosuid ---
+    sed -i 's|\(\s*/\s\+ext4\s\+\)\([^ ]*\)|\1\2,nodev,nosuid|' /etc/fstab
+
+    # --- Harden /boot/efi: add noexec,nodev,nosuid ---
+    sed -i 's|\(\s*/boot/efi\s\+vfat\s\+\)\([^ ]*\)|\1\2,noexec,nodev,nosuid|' /etc/fstab
+
+    systemctl daemon-reload
+
     ########
     # Stuff
 
     apt install -y \
-      nala ncdu xclip \
+      nala git rsync \
+      apparmor-utils \
+      xrdp ncdu viewnior \
       fish fzf fd-find eza bat chafa hexyl \
       btop iftop mtr-tiny fonts-noto-color-emoji \
-      tty-clock screenfetch cmatrix cbonsai \
-      git rsync \
-      xrdp viewnior \
+      screenfetch cmatrix cbonsai tty-clock \
 
     fc-cache -f
 
@@ -201,6 +236,14 @@ EOF
       /etc/ssh/sshd_config
 
     systemctl restart sshd
+
+    ############
+    # Apparmour
+
+    aa-enforce tcpdump
+    aa-enforce unix_chkpwd
+    aa-enforce unprivileged_userns
+    aa-enforce xorg
 
     #######
     # Boot
