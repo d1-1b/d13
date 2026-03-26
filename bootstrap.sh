@@ -17,7 +17,7 @@ write_c () {
 if [ "$script_name" = "bootstrap.sh" ]; then
 
     #############
-    # Root phase
+    # ROOT PHASE
 
     if [ "$EUID" -ne 0 ]; then
         exec pkexec bash "$0" "$@"
@@ -35,6 +35,18 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
     apt update
     apt upgrade -y
+
+    #######
+    # Boot
+
+    sed -i \
+      -e 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' \
+      -e '/^GRUB_TIMEOUT_STYLE=/d' \
+      -e '/^GRUB_TIMEOUT=0/a GRUB_TIMEOUT_STYLE=menu' \
+      -e 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=6"/' \
+      -e 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="ipv6.disable=1"/' \
+      /etc/default/grub
+    update-grub
 
     ##########
     # Network
@@ -68,6 +80,12 @@ flush ruleset
 
 table inet filter {
 
+    # --- PRE-ROUTING ---
+    # --- DNAT / redirect ---
+    chain prerouting {
+        type nat hook prerouting priority dstnat;
+    }
+
     # --- Services ---
     set services {
         type ifname . inet_proto . inet_service;
@@ -75,12 +93,6 @@ table inet filter {
         elements = {
             "eth0" . tcp . 22,
         }
-    }
-
-    # --- PRE-ROUTING ---
-    # --- DNAT / redirect ---
-    chain prerouting {
-        type nat hook prerouting priority dstnat;
     }
 
     # --- INPUT ---
@@ -102,16 +114,16 @@ table inet filter {
         iifname . ip protocol . th dport @br0_services accept
     }
 
-    # --- FORWARD ---
-    chain forward {
-        type filter hook forward priority filter;
-        policy drop;
-    }
-
     # --- OUTPUT ---
     chain output {
         type filter hook output priority filter;
         policy accept;
+    }
+
+    # --- FORWARD ---
+    chain forward {
+        type filter hook forward priority filter;
+        policy drop;
     }
 
     # --- POST-ROUTING ---
@@ -136,132 +148,35 @@ EOF
     # Sysctl
 
 cat > /etc/sysctl.d/99-network-hardening.conf << 'EOF'
-# https://github.com/jeffbencteux/sysctlchk/blob/main/refs/all.conf
-
-# Filter by reverse-path (source validation)
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-
-# No ICMP redirection messages
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-
-# No ICMP response to broadcast
-net.ipv4.icmp_echo_ignore_broadcasts = 1
-
-# Refuse source-routing packets
-net.ipv4.conf.all.accept_source_route = 0
-net.ipv4.conf.default.accept_source_route = 0
-
-# Refuse ICMP redirect messages
 net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.conf.all.rp_filter = 2
 net.ipv4.conf.all.secure_redirects = 0
+net.ipv4.conf.all.send_redirects = 0
 net.ipv4.conf.all.shared_media = 0
 net.ipv4.conf.default.accept_redirects = 0
+net.ipv4.conf.default.log_martians = 1
 net.ipv4.conf.default.secure_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
 net.ipv4.conf.default.shared_media = 0
-
-# Consider as invalid packets coming from external machines with source IP in 127.0.0.0/8 network
-net.ipv4.conf.all.accept_local = 0
-
-# Do not route packets with source or destination addresses in 127.0.0.0/8 network
-net.ipv4.conf.all.route_localnet = 0
-
-# Log packets with abnormal IP addresses
-net.ipv4.conf.all.log_martians = 1
-
-# RFC 1337: protection against TCP time-wait assassination
-net.ipv4.tcp_rfc1337 = 1
-
-# Ignore RFC1122 non-compliant answers
-net.ipv4.icmp_ignore_bogus_error_responses = 1
-
-# Broader range for ephemeral ports
 net.ipv4.ip_local_port_range = 32768 65535
-
-# Use SYN cookies
-net.ipv4.tcp_syncookies = 1
-
-# Increase size of received SYN segments (protection against SYN flooding)
 net.ipv4.tcp_max_syn_backlog = 4096
-
-# Disable IPv6 router solicitations
-net.ipv6.conf.all.router_solicitations = 0
-net.ipv6.conf.default.router_solicitations = 0
-
-# Do not accept IPv6 router preferences given by router advertisements
-net.ipv6.conf.all.accept_ra_rtr_pref = 0
-net.ipv6.conf.default.accept_ra_rtr_pref = 0
-
-# Do not accept auto prefix given by router advertisements
-net.ipv6.conf.all.accept_ra_pinfo = 0
-net.ipv6.conf.default.accept_ra_pinfo = 0
-
-# Do not auto-learn via router advertisements
-net.ipv6.conf.all.accept_ra_defrtr = 0
-net.ipv6.conf.default.accept_ra_defrtr = 0
-
-# No auto-configuration of IPv6 addresses via router advertisements
-net.ipv6.conf.all.autoconf = 0
-net.ipv6.conf.default.autoconf = 0
-
-# Do not accept ICMPv6 redirects
-net.ipv6.conf.all.accept_redirects = 0
-net.ipv6.conf.default.accept_redirects = 0
-
-# Do not accept IPv6 source routing packets
-net.ipv6.conf.all.accept_source_route = 0
-net.ipv6.conf.default.accept_source_route = 0
-
-# Reduce the number of IPv6 addresses per interface
-net.ipv6.conf.all.max_addresses = 1
-net.ipv6.conf.default.max_addresses = 1
+net.ipv4.tcp_rfc1337 = 1
 EOF
 
 cat > /etc/sysctl.d/99-system-hardening.conf << 'EOF'
-# https://github.com/jeffbencteux/sysctlchk/blob/main/refs/all.conf
-
-# Disallow kernel profiling by users without CAP_SYS_ADMIN
-kernel.perf_event_paranoid = 2
-
-# Disable sysrq (see here https://www.kernel.org/doc/Documentation/admin-guide/sysrq.rst)
-kernel.sysrq = 0
-
-# ASLR
-kernel.randomize_va_space = 2
-
-# Restrict kernel buffer read access
-kernel.dmesg_restrict = 1
-
-# Restrict access to kernel pointers in the proc filesystem
-kernel.kptr_restrict = 2
-
-# Explicitely set the kernel PID namespace size (setting it to PID_MAX_LIMIT: 2^22)
-kernel.pid_max = 4194304
-
-# Restrict BPF programs to privileged users
-kernel.unprivileged_bpf_disabled = 1
-
-# Set JIT BPF hardening, mitigates some JIT spraying attacks
-net.core.bpf_jit_harden = 2
-
-# Disable kexec. Avoid to replace and reload the kernel without going through the bootloader
 kernel.kexec_load_disabled = 1
-
-# Strict rules on writing sysctl files
-kernel.sysctl_writes_strict = 1
-
-# Disable coredumps of SUID binaries
-fs.suid_dumpable = 0
-
-# Avoid certain TOCTOU attacks on files
-fs.protected_hardlinks = 1
-fs.protected_symlinks = 1
-
-# Avoid unitentionnal writes to attacker-controlled FIFOs and files value could also be 2
-fs.protected_fifos = 1
-fs.protected_regular = 1
+kernel.kptr_restrict = 2
+kernel.sysrq = 0
+kernel.unprivileged_userns_clone = 0
+net.core.bpf_jit_harden = 2
 EOF
+
+    #########
+    # Python
+
+    chattr +i /usr/lib/python3/dist-packages
+    chattr +i /usr/local/lib/python3.13/dist-packages
 
     ##########
     # Watches
@@ -278,7 +193,7 @@ EOF
       xrdp ncdu viewnior \
       fish fzf fd-find eza bat chafa hexyl \
       btop iftop mtr-tiny fonts-noto-color-emoji \
-      screenfetch cmatrix cbonsai tty-clock \
+      screenfetch cmatrix cbonsai tty-clock cowsay lolcat
 
     fc-cache -f
 
@@ -327,27 +242,17 @@ EOF
 
     systemctl restart sshd
 
-    #######
-    # Boot
-
-    sed -i \
-      -e 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' \
-      -e '/^GRUB_TIMEOUT_STYLE=/d' \
-      -e '/^GRUB_TIMEOUT=0/a GRUB_TIMEOUT_STYLE=menu' \
-      -e 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=6"/' \
-      -e 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="ipv6.disable=1"/' \
-      /etc/default/grub
-    update-grub
+    ######
+    # End
 
     mv "$0" "/home/$user_name/configure.sh"
-
     read -p "Press Enter to poweroff: " _
     systemctl poweroff
 
 else
 
     #############
-    # User phase
+    # USER PHASE
 
     if [ "$EUID" -eq 0 ]; then
         echo "Do not run user phase as root."
@@ -406,7 +311,7 @@ else
       git clone "$DF_ORIGIN" "$DF_REPO"
 
       if not git -C "$DF_REPO" rev-parse HEAD >/dev/null 2>&1
-          echo "❌ Clone failed — aborting bootstrap."
+          echo "Clone failed — aborting bootstrap."
           exit 1
       end
 
