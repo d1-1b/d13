@@ -162,6 +162,7 @@ net.ipv4.conf.default.shared_media = 0
 net.ipv4.ip_local_port_range = 32768 65535
 net.ipv4.tcp_max_syn_backlog = 4096
 net.ipv4.tcp_rfc1337 = 1
+net.sctp.sctp_enable = 0
 EOF
 
 cat > /etc/sysctl.d/99-system-hardening.conf << 'EOF'
@@ -190,10 +191,10 @@ EOF
 
     apt install -y \
       nala git rsync \
-      xrdp ncdu viewnior \
+      xrdp ncdu \
       fish fzf fd-find eza bat chafa hexyl \
       btop iftop mtr-tiny fonts-noto-color-emoji \
-      screenfetch cmatrix cbonsai tty-clock cowsay lolcat
+      screenfetch cmatrix cbonsai tty-clock cowsay
 
     fc-cache -f
 
@@ -204,6 +205,11 @@ EOF
     wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-amd64 \
          -O /usr/local/bin/oh-my-posh
     chmod +x /usr/local/bin/oh-my-posh
+
+    # lolcat-cc
+    wget -q https://github.com/n-ham/lolcat-cc/releases/download/v1.0.1/lolcat-cc \
+         -O /usr/local/bin/lolcat
+    chmod +x /usr/local/bin/lolcat
 
     # sublime
     wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
@@ -230,10 +236,14 @@ EOF
 
     systemctl restart xrdp xrdp-sesman
 
+    #######
+    # Motd
+
+    sudo rm /etc/update-motd.d/*
+    truncate -s 0 /etc/motd
+
     ######
     # Ssh
-
-    truncate -s 0 /etc/motd
 
     sed -i \
       -e 's/^#\?ListenAddress 0\.0\.0\.0.*/ListenAddress 0.0.0.0/' \
