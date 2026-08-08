@@ -3,7 +3,7 @@
 #######
 # Init
 
-# wget -O "$HOME/bootstrap.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap.sh?nocache=$(date +%s)"
+# wget -O "$HOME/bootstrap_pie.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap_pie.sh?nocache=$(date +%s)"
 
 script_name="$(basename "$0")"
 
@@ -14,7 +14,7 @@ write_c () {
     printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$2"
 }
 
-if [ "$script_name" = "bootstrap.sh" ]; then
+if [ "$script_name" = "bootstrap_pie.sh" ]; then
 
     #############
     # ROOT PHASE
@@ -109,13 +109,9 @@ EOF
     # Boot
 
     sed -i \
-      -e 's/^GRUB_TIMEOUT=.*/GRUB_TIMEOUT=0/' \
-      -e '/^GRUB_TIMEOUT_STYLE=/d' \
-      -e '/^GRUB_TIMEOUT=0/a GRUB_TIMEOUT_STYLE=menu' \
-      -e 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT="loglevel=6"/' \
-      -e 's/^GRUB_CMDLINE_LINUX=.*/GRUB_CMDLINE_LINUX="ipv6.disable=1"/' \
-      /etc/default/grub
-    update-grub
+      -e 's/quiet splash //' \
+      -e '/loglevel=6/!s/$/ loglevel=6 ipv6.disable=1/' \
+      /boot/firmware/cmdline.txt
 
     #######
     # Motd
@@ -139,10 +135,10 @@ EOF
 
     apt install -y \
       nala git rsync \
-      xrdp \
+      xrdp xfce4 xfce4-terminal xfce4-genmon-plugin \
       fish fonts-noto-color-emoji \
       fzf fd-find eza bat chafa hexyl \
-      ncdu btop iftop mtr-tiny  \
+      ncdu btop iftop mtr-tiny \
       screenfetch cmatrix cbonsai tty-clock cowsay
 
     fc-cache -f
@@ -151,14 +147,15 @@ EOF
     ln -sf /usr/bin/batcat /usr/local/bin/bat
 
     # Oh-my-posh
-    wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-amd64 \
+    wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-arm64 \
          -O /usr/local/bin/oh-my-posh
     chmod +x /usr/local/bin/oh-my-posh
 
-    # Lolcat-cc
-    wget -q https://github.com/n-ham/lolcat-cc/releases/download/v1.0.1/lolcat-cc \
-         -O /usr/local/bin/lolcat
-    chmod +x /usr/local/bin/lolcat
+    # lolcat-cc
+    wget -q https://github.com/lolcatpp/lolcatpp/releases/download/v2.6.0/lolcat++_2.6.0.trixie_arm64.deb \
+         -O /dev/shm/lolcatpp.deb
+    apt install -y /dev/shm/lolcatpp.deb
+    rm /dev/shm/lolcatpp.deb
 
     # Sublime
     wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
@@ -253,15 +250,56 @@ EOF
 
     systemctl enable xrdp --now
 
-    echo hv_sock > /etc/modules-load.d/hv_sock.conf
-
-    sed -i '0,/^port=3389$/s//port=vsock:\/\/-1:3389/' /etc/xrdp/xrdp.ini
     sed -i 's/^security_layer=.*/security_layer=rdp/' /etc/xrdp/xrdp.ini
     sed -i 's/^crypt_level=.*/crypt_level=none/' /etc/xrdp/xrdp.ini
 
     sed -i 's/^FuseMountName=.*/FuseMountName=shared-drives/' /etc/xrdp/sesman.ini
 
     systemctl restart xrdp xrdp-sesman
+
+    ########
+    # Wi-Fi
+
+    iw dev wlan0 set power_save off
+
+    systemctl stop NetworkManager
+
+    write_c "0" "/var/lib/systemd/rfkill/platform-1001100000.mmc:wlan"
+
+    write_c "[main]
+    NetworkingEnabled=true
+    WirelessEnabled=true
+    WWANEnabled=true" /var/lib/NetworkManager/NetworkManager.state
+
+    write_c "[keyfile]
+             unmanaged-devices=interface-name:wlan0" /etc/NetworkManager/conf.d/97-unmanaged-wlan0.conf
+
+    systemctl start NetworkManager
+
+    rfkill unblock wifi
+
+    apt install -y iwd
+    systemctl enable --now iwd
+
+    write_c "[Match]
+             Name=wlan0
+
+             [DHCP]
+             UseDNS=yes
+             UseGateway=yes
+             UseRoutes=yes
+
+             [Network]
+             LinkLocalAddressing=no
+             IPv6AcceptRA=no
+             DHCP=ipv4" /etc/systemd/network/10-wlan0.network
+
+    systemctl enable --now systemd-networkd
+
+    iwctl station wlan0 scan
+    sleep 3
+    iwctl station wlan0 get-networks
+    iwctl station wlan0 connect bCl-5G1
 
     ###########
     # Ethernet
@@ -298,9 +336,7 @@ EOF
     ######
     # End
 
-    mv "$0" "/home/$user_name/configure.sh"
-    read -p "Press Enter to poweroff: " _
-    systemctl poweroff
+    mv "$0" "/home/$user_name/configure_pie.sh"
 
 else
 
@@ -384,7 +420,4 @@ else
     if [ "$SHELL" != "/usr/bin/fish" ]; then
         chsh -s /usr/bin/fish "$USER"
     fi
-
-    read -p "Press Enter to logout: " _
-    xfce4-session-logout -l
 fi
