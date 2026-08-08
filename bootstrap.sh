@@ -20,10 +20,10 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     # ROOT PHASE
 
     if [ "$EUID" -ne 0 ]; then
-        exec sudo bash "$0" "$@"
+        exec pkexec bash "$0" "$@"
     fi
 
-    user_name="$(id -un "$SUDO_UID")"
+    user_name="$(id -un "$PKEXEC_UID")"
 
     #######
     # Sudo
