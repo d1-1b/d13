@@ -284,6 +284,7 @@ EOF
              IPv6AcceptRA=no
              DHCP=ipv4" /etc/systemd/network/00-eth0.network
 
+    systemctl enable systemd-networkd --now
     systemctl reload systemd-networkd
 
     systemctl disable NetworkManager --now
