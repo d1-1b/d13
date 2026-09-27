@@ -3,7 +3,11 @@
 #######
 # Init
 
+# Disable powersave
+# sudo ethtool --set-eee eth0 eee off
+
 # wget -O "$HOME/bootstrap_pie.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap_pie.sh?nocache=$(date +%s)"
+# chmod +c bootstrap_pie.sh
 
 script_name="$(basename "$0")"
 
@@ -11,8 +15,47 @@ script_name="$(basename "$0")"
 # Functions
 
 write_c () {
-    printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$2"
+    local tmp
+    tmp="$(mktemp)"
+    printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$tmp"
+    if [ -f "$2" ] && cmp -s "$tmp" "$2"; then
+        rm -f "$tmp"
+        return 1   # unchanged
+    fi
+    mv "$tmp" "$2"
+    return 0       # changed
 }
+
+sed_c () {
+    local file="$1"
+    shift
+    local tmp
+    tmp="$(mktemp)"
+    cp -p "$file" "$tmp"
+    sed -i "$@" "$tmp"
+    if cmp -s "$tmp" "$file"; then
+        rm -f "$tmp"
+        return 1   # unchanged
+    fi
+    mv "$tmp" "$file"
+    return 0       # changed
+}
+
+cat_c () {
+    local file="$1"
+    local tmp
+    tmp="$(mktemp)"
+    cat > "$tmp"
+    if [ -f "$file" ] && cmp -s "$tmp" "$file"; then
+        rm -f "$tmp"
+        return 1   # unchanged
+    fi
+    mv "$tmp" "$file"
+    return 0       # changed
+}
+
+#######
+# MAIN
 
 if [ "$script_name" = "bootstrap_pie.sh" ]; then
 
@@ -33,10 +76,12 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
     ######
     # DNS
 
-    write_c "[main]
-             rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf
-
-    systemctl reload NetworkManager.service
+    if [ -d /etc/NetworkManager ]; then
+        if write_c "[main]
+                    rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf; then
+            systemctl reload NetworkManager.service
+        fi
+    fi
 
     write_c "nameserver 9.9.9.9" /etc/resolv.conf
 
@@ -50,60 +95,62 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
     # Systemd-resolved
 
     apt install -y systemd-resolved
-
-    sed -i 's/^\s*#\?\s*DNS=.*/DNS=9.9.9.9/' /etc/systemd/resolved.conf
-    sed -i 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' /etc/systemd/resolved.conf
-    sed -i 's/^\s*#\?\s*LLMNR=.*/LLMNR=no/' /etc/systemd/resolved.conf
-    sed -i 's/^\s*#\?\s*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
-
     systemctl enable systemd-resolved --now
 
-    rm -f /etc/resolv.conf
-    ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    if sed_c /etc/systemd/resolved.conf \
+          -e 's/^\s*#\?\s*DNS=.*/DNS=9.9.9.9/' \
+          -e 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' \
+          -e 's/^\s*#\?\s*LLMNR=.*/LLMNR=no/' \
+          -e 's/^\s*#\?\s*DNSStubListener=.*/DNSStubListener=no/'; then
 
-    systemctl restart systemd-resolved
+        systemctl restart systemd-resolved
+    fi
+
+    if [ ! -L /etc/resolv.conf ]; then
+        rm -f /etc/resolv.conf
+        ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    fi
 
     #########
     # Sysctl
 
-cat > /etc/sysctl.d/99-network-hardening.conf << 'EOF'
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.all.log_martians = 1
-net.ipv4.conf.all.rp_filter = 2
-net.ipv4.conf.all.secure_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.all.shared_media = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.default.log_martians = 1
-net.ipv4.conf.default.secure_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-net.ipv4.conf.default.shared_media = 0
-net.ipv4.ip_local_port_range = 32768 65535
-net.ipv4.tcp_max_syn_backlog = 4096
-net.ipv4.tcp_rfc1337 = 1
-net.sctp.sctp_enable = 0
-EOF
+    SYSCTL_CHANGED=0
+    write_c "net.ipv4.conf.all.accept_redirects = 0
+             net.ipv4.conf.all.log_martians = 1
+             net.ipv4.conf.all.rp_filter = 2
+             net.ipv4.conf.all.secure_redirects = 0
+             net.ipv4.conf.all.send_redirects = 0
+             net.ipv4.conf.all.shared_media = 0
+             net.ipv4.conf.default.accept_redirects = 0
+             net.ipv4.conf.default.log_martians = 1
+             net.ipv4.conf.default.secure_redirects = 0
+             net.ipv4.conf.default.send_redirects = 0
+             net.ipv4.conf.default.shared_media = 0
+             net.ipv4.ip_local_port_range = 32768 65535
+             net.ipv4.tcp_max_syn_backlog = 4096
+             net.ipv4.tcp_rfc1337 = 1
+             net.sctp.sctp_enable = 0" /etc/sysctl.d/99-network-hardening.conf && SYSCTL_CHANGED=1
 
-cat > /etc/sysctl.d/99-system-hardening.conf << 'EOF'
-kernel.kexec_load_disabled = 1
-kernel.kptr_restrict = 2
-kernel.sysrq = 0
-kernel.unprivileged_userns_clone = 0
-net.core.bpf_jit_harden = 2
-EOF
+    write_c "kernel.kexec_load_disabled = 1
+             kernel.kptr_restrict = 2
+             kernel.sysrq = 0
+             kernel.unprivileged_userns_clone = 0
+             net.core.bpf_jit_harden = 2" /etc/sysctl.d/99-system-hardening.conf && SYSCTL_CHANGED=1
 
     #######
     # IPv6
 
     write_c "net.ipv6.conf.all.disable_ipv6 = 1
-             net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf
+             net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf && SYSCTL_CHANGED=1
 
     ##########
     # Watches
 
-    write_c "fs.inotify.max_user_watches=482808" /etc/sysctl.d/99-inotify.conf
+    write_c "fs.inotify.max_user_watches=482808" /etc/sysctl.d/99-inotify.conf && SYSCTL_CHANGED=1
 
-    sysctl --system
+    if [ "$SYSCTL_CHANGED" -eq 1 ]; then
+        sysctl --system
+    fi
 
     #######
     # Boot
@@ -116,19 +163,23 @@ EOF
     #######
     # Motd
 
-    rm /etc/update-motd.d/*
+    rm -f /etc/update-motd.d/* 2>/dev/null || true
     truncate -s 0 /etc/motd
 
     #########
     # Locale
 
-    sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-    sed -i 's/^# *sv_SE.UTF-8 UTF-8/sv_SE.UTF-8 UTF-8/' /etc/locale.gen
-    locale-gen
+    NEED_LOCALE_GEN=0
+    locale -a | grep -qi '^en_US\.utf8$' || NEED_LOCALE_GEN=1
+    locale -a | grep -qi '^sv_SE\.utf8$' || NEED_LOCALE_GEN=1
 
-    update-locale LANG=en_US.UTF-8 LC_ALL= LC_TIME=sv_SE.UTF-8
-
-    localectl set-x11-keymap se
+    if [ "$NEED_LOCALE_GEN" -eq 1 ]; then
+        sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+        sed -i 's/^# *sv_SE.UTF-8 UTF-8/sv_SE.UTF-8 UTF-8/' /etc/locale.gen
+        locale-gen
+        update-locale LANG=en_US.UTF-8 LC_ALL= LC_TIME=sv_SE.UTF-8
+        localectl set-x11-keymap se
+    fi
 
     ##########
     # Install
@@ -141,36 +192,44 @@ EOF
       ncdu btop iftop mtr-tiny \
       screenfetch cmatrix cbonsai tty-clock cowsay
 
-    fc-cache -f
+    fc-cache
 
-    ln -sf /usr/bin/fdfind /usr/local/bin/fd
-    ln -sf /usr/bin/batcat /usr/local/bin/bat
+    [ "$(readlink -f /usr/local/bin/fd 2>/dev/null)" = "/usr/bin/fdfind" ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd
+    [ "$(readlink -f /usr/local/bin/bat 2>/dev/null)" = "/usr/bin/batcat" ] || ln -sf /usr/bin/batcat /usr/local/bin/bat
 
     # Oh-my-posh
-    wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-arm64 \
-         -O /usr/local/bin/oh-my-posh
-    chmod +x /usr/local/bin/oh-my-posh
+    if [ ! -x /usr/local/bin/oh-my-posh ]; then
+        wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-arm64 \
+             -O /usr/local/bin/oh-my-posh
+        chmod +x /usr/local/bin/oh-my-posh
+    fi
 
     # lolcat-cc
-    wget -q https://github.com/lolcatpp/lolcatpp/releases/download/v2.6.0/lolcat++_2.6.0.trixie_arm64.deb \
-         -O /dev/shm/lolcatpp.deb
-    apt install -y /dev/shm/lolcatpp.deb
-    rm /dev/shm/lolcatpp.deb
+    if ! dpkg -l | grep -qi '^ii.*lolcat'; then
+        wget -q https://github.com/lolcatpp/lolcatpp/releases/download/v2.6.0/lolcat++_2.6.0.trixie_arm64.deb \
+             -O /dev/shm/lolcatpp.deb
+        apt install -y /dev/shm/lolcatpp.deb
+        rm /dev/shm/lolcatpp.deb
+    fi
 
     # Sublime
-    wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
-         | gpg --dearmor > /usr/share/keyrings/sublimehq-archive.gpg
+    if [ ! -f /usr/share/keyrings/sublimehq-archive.gpg ]; then
+        wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
+             | gpg --dearmor > /usr/share/keyrings/sublimehq-archive.gpg
+    fi
 
-    write_c "deb [signed-by=/usr/share/keyrings/sublimehq-archive.gpg] https://download.sublimetext.com/ apt/stable/" \
-            /etc/apt/sources.list.d/sublime-text.list
-
-    apt update
-    apt install -y sublime-text
+    if write_c "deb [signed-by=/usr/share/keyrings/sublimehq-archive.gpg] https://download.sublimetext.com/ apt/stable/" \
+            /etc/apt/sources.list.d/sublime-text.list; then
+        apt update
+        apt install -y sublime-text
+    fi
 
     ###########
     # Nftables
 
-cat > /etc/nftables.conf << 'EOF'
+    systemctl enable nftables --now
+
+    if cat_c /etc/nftables.conf << 'EOF'
 #!/usr/sbin/nft -f
 
 flush ruleset
@@ -231,50 +290,73 @@ table inet filter {
     }
 }
 EOF
-
-    systemctl enable nftables --now
-    systemctl reload nftables
+    then
+        systemctl reload nftables
+    fi
 
     ######
     # Ssh
 
-    sed -i \
-      -e 's/^#\?ListenAddress 0\.0\.0\.0.*/ListenAddress 0.0.0.0/' \
-      -e 's/^#\?AddressFamily.*/AddressFamily inet/' \
-      /etc/ssh/sshd_config
+    if sed_c /etc/ssh/sshd_config \
+          -e 's/^#\?ListenAddress 0\.0\.0\.0.*/ListenAddress 0.0.0.0/' \
+          -e 's/^#\?AddressFamily.*/AddressFamily inet/'; then
 
-    systemctl restart sshd
+        systemctl restart sshd
+    fi
 
     #######
     # Xrdp
 
-    systemctl enable xrdp --now
+    if ! systemctl is-active --quiet xrdp; then
+        systemctl enable xrdp --now
 
-    sed -i 's/^security_layer=.*/security_layer=rdp/' /etc/xrdp/xrdp.ini
-    sed -i 's/^crypt_level=.*/crypt_level=none/' /etc/xrdp/xrdp.ini
+        xrdp_changed=0
+        sesman_changed=0
 
-    sed -i 's/^FuseMountName=.*/FuseMountName=shared-drives/' /etc/xrdp/sesman.ini
+        if sed_c /etc/xrdp/xrdp.ini \
+            -e 's/^security_layer=.*/security_layer=rdp/' \
+            -e 's/^crypt_level=.*/crypt_level=none/'
+        then
+            xrdp_changed=1
+        fi
 
-    systemctl restart xrdp xrdp-sesman
+        if sed_c /etc/xrdp/sesman.ini \
+            's/^FuseMountName=.*/FuseMountName=shared-drives/'
+        then
+            sesman_changed=1
+        fi
+
+        if [ "$xrdp_changed" -eq 1 ]; then
+            systemctl restart xrdp
+        fi
+        if [ "$sesman_changed" -eq 1 ]; then
+            systemctl restart xrdp-sesman
+        fi
+    fi
 
     ########
     # Wi-Fi
 
-    iw dev wlan0 set power_save off
+    # Disable onboard wifi
+    CONFIG_TXT="/boot/firmware/config.txt"
+    grep -qxF "dtoverlay=disable-wifi" "$CONFIG_TXT" \
+      || printf '\n[all]\ndtoverlay=disable-wifi\n' >> "$CONFIG_TXT"
 
-    systemctl stop NetworkManager
+    # Set adapter names
+    declare -A WLAN_LINKS=(
+        ["58:04:4f:e8:22:c7"]="wlan1"
+        ["cc:ba:bd:ab:ca:e4"]="wlan2"
+    )
 
-    write_c "0" "/var/lib/systemd/rfkill/platform-1001100000.mmc:wlan"
-
-    write_c "[main]
-    NetworkingEnabled=true
-    WirelessEnabled=true
-    WWANEnabled=true" /var/lib/NetworkManager/NetworkManager.state
-
-    write_c "[keyfile]
-             unmanaged-devices=interface-name:wlan0" /etc/NetworkManager/conf.d/97-unmanaged-wlan0.conf
-
-    systemctl start NetworkManager
+    # Write adapter names
+    WIFI_CHANGED=0
+    for mac in "${!WLAN_LINKS[@]}"; do
+        name="${WLAN_LINKS[$mac]}"
+        write_c "[Match]
+                 MACAddress=${mac}
+                 [Link]
+                 Name=${name}" "/etc/systemd/network/10-${name}.link" && WIFI_CHANGED=1
+    done
 
     rfkill unblock wifi
 
@@ -282,7 +364,7 @@ EOF
     systemctl enable --now iwd
 
     write_c "[Match]
-             Name=wlan0
+             Name=wlan1
 
              [DHCP]
              UseDNS=yes
@@ -292,47 +374,113 @@ EOF
              [Network]
              LinkLocalAddressing=no
              IPv6AcceptRA=no
-             DHCP=ipv4" /etc/systemd/network/10-wlan0.network
+             DHCP=ipv4" /etc/systemd/network/10-wlan1.network && WIFI_CHANGED=1
+
+    write_c "[Match]
+             Name=wlan2
+
+             [Network]
+             Address=192.168.0.1/24
+             IPForward=yes
+             DHCPServer=yes
+
+             [DHCPServer]
+             PoolOffset=50
+             PoolSize=200
+             EmitDNS=yes
+             DNS=192.168.0.1" /etc/systemd/network/10-wlan2.network && WIFI_CHANGED=1
 
     systemctl enable systemd-networkd --now
 
-    iwctl station wlan0 scan
-    sleep 3
-    iwctl station wlan0 get-networks
-    iwctl station wlan0 connect bCl-5G1
+    if [ "$WIFI_CHANGED" -eq 1 ]; then
+        systemctl reload systemd-networkd
+    fi
+
+    if ! iwctl station wlan1 show | grep -q "Connected network"; then
+        iwctl station wlan1 scan
+        sleep 3
+        iwctl station wlan1 get-networks
+        iwctl station wlan1 connect bCl-5G1
+    fi
+
+    #####
+    # AP
+
+    if ! systemctl is-active --quiet wlan2-ap.service; then
+
+        read -rp "SSID for wlan2 AP: " AP_SSID
+
+        while true; do
+            read -rsp "Password for wlan2 AP (min 8 chars): " AP_PSK
+            echo
+            read -rsp "Confirm password: " AP_PSK_CONFIRM
+            echo
+            if [ "$AP_PSK" != "$AP_PSK_CONFIRM" ]; then
+                echo "Passwords didn't match — try again."
+                continue
+            fi
+            if [ ${#AP_PSK} -lt 8 ]; then
+                echo "Password must be at least 8 characters (WPA2 minimum) — try again."
+                continue
+            fi
+            break
+        done
+
+        write_c "[Unit]
+                 Description=Start iwd AP on wlan2
+                 After=iwd.service sys-subsystem-net-devices-wlan2.device
+                 Requires=iwd.service
+                 BindsTo=sys-subsystem-net-devices-wlan2.device
+
+                 [Service]
+                 Type=oneshot
+                 RemainAfterExit=yes
+                 ExecStartPre=/usr/bin/iwctl device wlan2 set-property Mode ap
+                 ExecStart=/usr/bin/iwctl ap wlan2 start \"${AP_SSID}\" \"${AP_PSK}\"
+                 ExecStop=/usr/bin/iwctl ap wlan2 stop
+
+                 [Install]
+                 WantedBy=multi-user.target" /etc/systemd/system/wlan2-ap.service
+
+        systemctl daemon-reload
+        systemctl restart wlan2-ap.service
+    fi
 
     ###########
     # Ethernet
 
-    write_c "[keyfile]
-             unmanaged-devices=interface-name:eth0" /etc/NetworkManager/conf.d/99-unmanaged-eth0.conf
+    if [ -d /etc/NetworkManager ]; then
+        if write_c "[keyfile]
+                    unmanaged-devices=interface-name:eth0" /etc/NetworkManager/conf.d/99-unmanaged-eth0.conf; then
+            systemctl reload NetworkManager
+        fi
+    fi
 
-    systemctl reload NetworkManager
+    if write_c "[Match]
+                Name=eth0
 
-    write_c "[Match]
-             Name=eth0
+                [Network]
+                Address=10.1.1.10/24
+                Gateway=10.1.1.1
+                DNS=10.1.1.1
+                LinkLocalAddressing=no
+                IPv6AcceptRA=no" /etc/systemd/network/00-eth0.network; then
 
-             [DHCP]
-             UseDNS=yes
-             UseGateway=yes
-             UseRoutes=yes
+        systemctl enable systemd-networkd --now
+        systemctl reload systemd-networkd
+    fi
 
-             [Network]
-             LinkLocalAddressing=no
-             IPv6AcceptRA=no
-             DHCP=ipv4" /etc/systemd/network/00-eth0.network
+    if [ -d /etc/NetworkManager ]; then
 
-    systemctl enable systemd-networkd --now
-    systemctl reload systemd-networkd
+        systemctl disable NetworkManager --now
 
-    systemctl disable NetworkManager --now
+        apt purge -y network-manager network-manager-gnome
+        apt purge -y netplan.io cloud-init
 
-    apt purge -y network-manager network-manager-gnome
-    apt purge -y netplan.io cloud-init
-
-    rm -rf /etc/NetworkManager
-    rm -rf /etc/netplan
-    rm -rf /etc/cloud
+        rm -rf /etc/NetworkManager
+        rm -rf /etc/netplan
+        rm -rf /etc/cloud
+    fi
 
     ######
     # End

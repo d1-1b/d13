@@ -11,8 +11,47 @@ script_name="$(basename "$0")"
 # Functions
 
 write_c () {
-    printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$2"
+    local tmp
+    tmp="$(mktemp)"
+    printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$tmp"
+    if [ -f "$2" ] && cmp -s "$tmp" "$2"; then
+        rm -f "$tmp"
+        return 1   # unchanged
+    fi
+    mv "$tmp" "$2"
+    return 0       # changed
 }
+
+sed_c () {
+    local file="$1"
+    shift
+    local tmp
+    tmp="$(mktemp)"
+    cp -p "$file" "$tmp"
+    sed -i "$@" "$tmp"
+    if cmp -s "$tmp" "$file"; then
+        rm -f "$tmp"
+        return 1   # unchanged
+    fi
+    mv "$tmp" "$file"
+    return 0       # changed
+}
+
+cat_c () {
+    local file="$1"
+    local tmp
+    tmp="$(mktemp)"
+    cat > "$tmp"
+    if [ -f "$file" ] && cmp -s "$tmp" "$file"; then
+        rm -f "$tmp"
+        return 1   # unchanged
+    fi
+    mv "$tmp" "$file"
+    return 0       # changed
+}
+
+#######
+# MAIN
 
 if [ "$script_name" = "bootstrap.sh" ]; then
 
@@ -33,8 +72,12 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     ######
     # DNS
 
-    write_c "[main]
-             rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf
+    if [ -d /etc/NetworkManager ]; then
+        if write_c "[main]
+                    rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf; then
+            systemctl reload NetworkManager.service
+        fi
+    fi
 
     systemctl reload NetworkManager.service
 
@@ -50,60 +93,62 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     # Systemd-resolved
 
     apt install -y systemd-resolved
-
-    sed -i 's/^\s*#\?\s*DNS=.*/DNS=9.9.9.9/' /etc/systemd/resolved.conf
-    sed -i 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' /etc/systemd/resolved.conf
-    sed -i 's/^\s*#\?\s*LLMNR=.*/LLMNR=no/' /etc/systemd/resolved.conf
-    sed -i 's/^\s*#\?\s*DNSStubListener=.*/DNSStubListener=no/' /etc/systemd/resolved.conf
-
     systemctl enable systemd-resolved --now
 
-    rm -f /etc/resolv.conf
-    ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    if sed_c /etc/systemd/resolved.conf \
+          -e 's/^\s*#\?\s*DNS=.*/DNS=9.9.9.9/' \
+          -e 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' \
+          -e 's/^\s*#\?\s*LLMNR=.*/LLMNR=no/' \
+          -e 's/^\s*#\?\s*DNSStubListener=.*/DNSStubListener=no/'; then
 
-    systemctl restart systemd-resolved
+        systemctl restart systemd-resolved
+    fi
+
+    if [ ! -L /etc/resolv.conf ]; then
+        rm -f /etc/resolv.conf
+        ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
+    fi
 
     #########
     # Sysctl
 
-cat > /etc/sysctl.d/99-network-hardening.conf << 'EOF'
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.all.log_martians = 1
-net.ipv4.conf.all.rp_filter = 2
-net.ipv4.conf.all.secure_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.conf.all.shared_media = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv4.conf.default.log_martians = 1
-net.ipv4.conf.default.secure_redirects = 0
-net.ipv4.conf.default.send_redirects = 0
-net.ipv4.conf.default.shared_media = 0
-net.ipv4.ip_local_port_range = 32768 65535
-net.ipv4.tcp_max_syn_backlog = 4096
-net.ipv4.tcp_rfc1337 = 1
-net.sctp.sctp_enable = 0
-EOF
+    SYSCTL_CHANGED=0
+    write_c "net.ipv4.conf.all.accept_redirects = 0
+             net.ipv4.conf.all.log_martians = 1
+             net.ipv4.conf.all.rp_filter = 2
+             net.ipv4.conf.all.secure_redirects = 0
+             net.ipv4.conf.all.send_redirects = 0
+             net.ipv4.conf.all.shared_media = 0
+             net.ipv4.conf.default.accept_redirects = 0
+             net.ipv4.conf.default.log_martians = 1
+             net.ipv4.conf.default.secure_redirects = 0
+             net.ipv4.conf.default.send_redirects = 0
+             net.ipv4.conf.default.shared_media = 0
+             net.ipv4.ip_local_port_range = 32768 65535
+             net.ipv4.tcp_max_syn_backlog = 4096
+             net.ipv4.tcp_rfc1337 = 1
+             net.sctp.sctp_enable = 0" /etc/sysctl.d/99-network-hardening.conf && SYSCTL_CHANGED=1
 
-cat > /etc/sysctl.d/99-system-hardening.conf << 'EOF'
-kernel.kexec_load_disabled = 1
-kernel.kptr_restrict = 2
-kernel.sysrq = 0
-kernel.unprivileged_userns_clone = 0
-net.core.bpf_jit_harden = 2
-EOF
+    write_c "kernel.kexec_load_disabled = 1
+             kernel.kptr_restrict = 2
+             kernel.sysrq = 0
+             kernel.unprivileged_userns_clone = 0
+             net.core.bpf_jit_harden = 2" /etc/sysctl.d/99-system-hardening.conf && SYSCTL_CHANGED=1
 
     #######
     # IPv6
 
     write_c "net.ipv6.conf.all.disable_ipv6 = 1
-             net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf
+             net.ipv6.conf.default.disable_ipv6 = 1" /etc/sysctl.d/99-disable-ipv6.conf && SYSCTL_CHANGED=1
 
     ##########
     # Watches
 
-    write_c "fs.inotify.max_user_watches=482808" /etc/sysctl.d/99-inotify.conf
+    write_c "fs.inotify.max_user_watches=482808" /etc/sysctl.d/99-inotify.conf && SYSCTL_CHANGED=1
 
-    sysctl --system
+    if [ "$SYSCTL_CHANGED" -eq 1 ]; then
+        sysctl --system
+    fi
 
     #######
     # Boot
@@ -120,60 +165,72 @@ EOF
     #######
     # Motd
 
-    rm /etc/update-motd.d/*
+    rm -f /etc/update-motd.d/* 2>/dev/null || true
     truncate -s 0 /etc/motd
 
     #########
     # Locale
 
-    sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
-    sed -i 's/^# *sv_SE.UTF-8 UTF-8/sv_SE.UTF-8 UTF-8/' /etc/locale.gen
-    locale-gen
+    NEED_LOCALE_GEN=0
+    locale -a | grep -qi '^en_US\.utf8$' || NEED_LOCALE_GEN=1
+    locale -a | grep -qi '^sv_SE\.utf8$' || NEED_LOCALE_GEN=1
 
-    update-locale LANG=en_US.UTF-8 LC_ALL= LC_TIME=sv_SE.UTF-8
-
-    localectl set-x11-keymap se
+    if [ "$NEED_LOCALE_GEN" -eq 1 ]; then
+        sed -i 's/^# *en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen
+        sed -i 's/^# *sv_SE.UTF-8 UTF-8/sv_SE.UTF-8 UTF-8/' /etc/locale.gen
+        locale-gen
+        update-locale LANG=en_US.UTF-8 LC_ALL= LC_TIME=sv_SE.UTF-8
+        localectl set-x11-keymap se
+    fi
 
     ##########
     # Install
 
     apt install -y \
       nala git rsync \
-      xrdp \
+      xrdp xfce4 xfce4-terminal xfce4-genmon-plugin \
       fish fonts-noto-color-emoji \
       fzf fd-find eza bat chafa hexyl \
-      ncdu btop iftop mtr-tiny  \
+      ncdu btop iftop mtr-tiny \
       screenfetch cmatrix cbonsai tty-clock cowsay
 
-    fc-cache -f
+    fc-cache
 
-    ln -sf /usr/bin/fdfind /usr/local/bin/fd
-    ln -sf /usr/bin/batcat /usr/local/bin/bat
+    [ "$(readlink -f /usr/local/bin/fd 2>/dev/null)" = "/usr/bin/fdfind" ] || ln -sf /usr/bin/fdfind /usr/local/bin/fd
+    [ "$(readlink -f /usr/local/bin/bat 2>/dev/null)" = "/usr/bin/batcat" ] || ln -sf /usr/bin/batcat /usr/local/bin/bat
 
     # Oh-my-posh
-    wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-amd64 \
-         -O /usr/local/bin/oh-my-posh
-    chmod +x /usr/local/bin/oh-my-posh
+    if [ ! -x /usr/local/bin/oh-my-posh ]; then
+        wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-arm64 \
+             -O /usr/local/bin/oh-my-posh
+        chmod +x /usr/local/bin/oh-my-posh
+    fi
 
     # Lolcat-cc
-    wget -q https://github.com/n-ham/lolcat-cc/releases/download/v1.0.1/lolcat-cc \
+    if [ ! -x /usr/local/bin/lolcat ]; then
+        wget -q https://github.com/n-ham/lolcat-cc/releases/download/v1.0.1/lolcat-cc \
          -O /usr/local/bin/lolcat
-    chmod +x /usr/local/bin/lolcat
+        chmod +x /usr/local/bin/lolcat
+    fi
 
     # Sublime
-    wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
-         | gpg --dearmor > /usr/share/keyrings/sublimehq-archive.gpg
+    if [ ! -f /usr/share/keyrings/sublimehq-archive.gpg ]; then
+        wget -qO - https://download.sublimetext.com/sublimehq-pub.gpg \
+             | gpg --dearmor > /usr/share/keyrings/sublimehq-archive.gpg
+    fi
 
-    write_c "deb [signed-by=/usr/share/keyrings/sublimehq-archive.gpg] https://download.sublimetext.com/ apt/stable/" \
-            /etc/apt/sources.list.d/sublime-text.list
-
-    apt update
-    apt install -y sublime-text
+    if write_c "deb [signed-by=/usr/share/keyrings/sublimehq-archive.gpg] https://download.sublimetext.com/ apt/stable/" \
+            /etc/apt/sources.list.d/sublime-text.list; then
+        apt update
+        apt install -y sublime-text
+    fi
 
     ###########
     # Nftables
 
-cat > /etc/nftables.conf << 'EOF'
+        systemctl enable nftables --now
+
+    if cat_c /etc/nftables.conf << 'EOF'
 #!/usr/sbin/nft -f
 
 flush ruleset
@@ -234,67 +291,92 @@ table inet filter {
     }
 }
 EOF
-
-    systemctl enable nftables --now
-    systemctl reload nftables
+    then
+        systemctl reload nftables
+    fi
 
     ######
     # Ssh
 
-    sed -i \
-      -e 's/^#\?ListenAddress 0\.0\.0\.0.*/ListenAddress 0.0.0.0/' \
-      -e 's/^#\?AddressFamily.*/AddressFamily inet/' \
-      /etc/ssh/sshd_config
+    if sed_c /etc/ssh/sshd_config \
+          -e 's/^#\?ListenAddress 0\.0\.0\.0.*/ListenAddress 0.0.0.0/' \
+          -e 's/^#\?AddressFamily.*/AddressFamily inet/'; then
 
-    systemctl restart sshd
+        systemctl restart sshd
+    fi
 
     #######
     # Xrdp
 
-    systemctl enable xrdp --now
+    if ! systemctl is-active --quiet xrdp; then
+        systemctl enable xrdp --now
+
+        xrdp_changed=0
+        sesman_changed=0
+
+        if sed_c /etc/xrdp/xrdp.ini \
+            -e '0,/^port=3389$/s//port=vsock:\/\/-1:3389/' \
+            -e 's/^security_layer=.*/security_layer=rdp/' \
+            -e 's/^crypt_level=.*/crypt_level=none/'
+        then
+            xrdp_changed=1
+        fi
+
+        if sed_c /etc/xrdp/sesman.ini \
+            's/^FuseMountName=.*/FuseMountName=shared-drives/'
+        then
+            sesman_changed=1
+        fi
+
+        if [ "$xrdp_changed" -eq 1 ]; then
+            systemctl restart xrdp
+        fi
+
+        if [ "$sesman_changed" -eq 1 ]; then
+            systemctl restart xrdp-sesman
+        fi
+    fi
 
     echo hv_sock > /etc/modules-load.d/hv_sock.conf
-
-    sed -i '0,/^port=3389$/s//port=vsock:\/\/-1:3389/' /etc/xrdp/xrdp.ini
-    sed -i 's/^security_layer=.*/security_layer=rdp/' /etc/xrdp/xrdp.ini
-    sed -i 's/^crypt_level=.*/crypt_level=none/' /etc/xrdp/xrdp.ini
-
-    sed -i 's/^FuseMountName=.*/FuseMountName=shared-drives/' /etc/xrdp/sesman.ini
-
-    systemctl restart xrdp xrdp-sesman
 
     ###########
     # Ethernet
 
-    write_c "[keyfile]
-             unmanaged-devices=interface-name:eth0" /etc/NetworkManager/conf.d/99-unmanaged-eth0.conf
+    if [ -d /etc/NetworkManager ]; then
+        if write_c "[keyfile]
+                    unmanaged-devices=interface-name:eth0" /etc/NetworkManager/conf.d/99-unmanaged-eth0.conf; then
+            systemctl reload NetworkManager
+        fi
+    fi
 
-    systemctl reload NetworkManager
+    if write_c "[Match]
+                Name=eth0
 
-    write_c "[Match]
-             Name=eth0
+                [DHCP]
+                UseDNS=yes
+                UseGateway=yes
+                UseRoutes=yes
 
-             [DHCP]
-             UseDNS=yes
-             UseGateway=yes
-             UseRoutes=yes
+                [Network]
+                LinkLocalAddressing=no
+                IPv6AcceptRA=no
+                DHCP=ipv4" /etc/systemd/network/00-eth0.network; then
 
-             [Network]
-             LinkLocalAddressing=no
-             IPv6AcceptRA=no
-             DHCP=ipv4" /etc/systemd/network/00-eth0.network
+        systemctl enable systemd-networkd --now
+        systemctl reload systemd-networkd
+    fi
 
-    systemctl enable systemd-networkd --now
-    systemctl reload systemd-networkd
+    if [ -d /etc/NetworkManager ]; then
 
-    systemctl disable NetworkManager --now
+        systemctl disable NetworkManager --now
 
-    apt purge -y network-manager network-manager-gnome
-    apt purge -y netplan.io cloud-init
+        apt purge -y network-manager network-manager-gnome
+        apt purge -y netplan.io cloud-init
 
-    rm -rf /etc/NetworkManager
-    rm -rf /etc/netplan
-    rm -rf /etc/cloud
+        rm -rf /etc/NetworkManager
+        rm -rf /etc/netplan
+        rm -rf /etc/cloud
+    fi
 
     ######
     # End
