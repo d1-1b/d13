@@ -255,8 +255,11 @@ table inet filter {
         # Loopback
         iif "lo" accept
 
+        # DHCP (LAN → host)
+        iifname "eth0" udp sport 67 udp dport 68 accept
+
         # ICMP
-        ip protocol icmp accept
+        iifname "eth0" icmp type echo-request accept
 
         # Connection tracking
         ct state established,related accept
