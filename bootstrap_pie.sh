@@ -7,7 +7,7 @@
 # sudo ethtool --set-eee eth0 eee off
 
 # wget -O "$HOME/bootstrap_pie.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap_pie.sh?nocache=$(date +%s)"
-# chmod +x bootstrap_pie.sh
+# chmod +x ~/bootstrap_pie.sh
 
 script_name="$(basename "$0")"
 

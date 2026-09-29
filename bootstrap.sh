@@ -4,7 +4,7 @@
 # Init
 
 # wget -O "$HOME/bootstrap.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap.sh?nocache=$(date +%s)"
-# chmod +x bootstrap.sh
+# chmod +x ~/bootstrap.sh
 
 script_name="$(basename "$0")"
 
@@ -60,10 +60,10 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     # ROOT PHASE
 
     if [ "$EUID" -ne 0 ]; then
-        exec sudo bash "$0" "$@"
+        exec pkexec bash "$0" "$@"
     fi
 
-    user_name="$(id -un "$SUDO_UID")"
+    user_name="$(id -un "$PKEXEC_UID")"
 
     #######
     # Sudo
