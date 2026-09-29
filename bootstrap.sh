@@ -60,27 +60,15 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     # ROOT PHASE
 
     if [ "$EUID" -ne 0 ]; then
-        exec pkexec bash "$0" "$@"
+        exec sudo bash "$0" "$@"
     fi
 
-    user_name="$(id -un "$PKEXEC_UID")"
+    user_name="$(id -un "$SUDO_UID")"
 
     #######
     # Sudo
 
     usermod -aG sudo $user_name
-
-    ######
-    # DNS
-
-    if [ -d /etc/NetworkManager ]; then
-        if write_c "[main]
-                    rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf; then
-            systemctl reload NetworkManager.service
-        fi
-    fi
-
-    write_c "nameserver 9.9.9.9" /etc/resolv.conf
 
     #########
     # Update
@@ -94,6 +82,13 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     apt install -y systemd-resolved
     systemctl enable systemd-resolved --now
 
+    if [ -d /etc/NetworkManager ]; then
+        if write_c "[main]
+                    rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf; then
+            systemctl reload NetworkManager.service
+        fi
+    fi
+
     if sed_c /etc/systemd/resolved.conf \
           -e 's/^\s*#\?\s*DNS=.*/DNS=9.9.9.9/' \
           -e 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' \
@@ -103,7 +98,7 @@ if [ "$script_name" = "bootstrap.sh" ]; then
         systemctl restart systemd-resolved
     fi
 
-    if [ ! -L /etc/resolv.conf ]; then
+    if [ "$(readlink -f /etc/resolv.conf)" != "/run/systemd/resolve/resolv.conf" ]; then
         rm -f /etc/resolv.conf
         ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
     fi
@@ -200,7 +195,7 @@ if [ "$script_name" = "bootstrap.sh" ]; then
 
     # Oh-my-posh
     if [ ! -x /usr/local/bin/oh-my-posh ]; then
-        wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-arm64 \
+        wget -q https://github.com/JanDeDobbeleer/oh-my-posh/releases/latest/download/posh-linux-amd64 \
              -O /usr/local/bin/oh-my-posh
         chmod +x /usr/local/bin/oh-my-posh
     fi

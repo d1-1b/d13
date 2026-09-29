@@ -7,7 +7,7 @@
 # sudo ethtool --set-eee eth0 eee off
 
 # wget -O "$HOME/bootstrap_pie.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap_pie.sh?nocache=$(date +%s)"
-# chmod +c bootstrap_pie.sh
+# chmod +x bootstrap_pie.sh
 
 script_name="$(basename "$0")"
 
@@ -73,18 +73,6 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
 
     usermod -aG sudo $user_name
 
-    ######
-    # DNS
-
-    if [ -d /etc/NetworkManager ]; then
-        if write_c "[main]
-                    rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf; then
-            systemctl reload NetworkManager.service
-        fi
-    fi
-
-    write_c "nameserver 9.9.9.9" /etc/resolv.conf
-
     #########
     # Update
 
@@ -97,6 +85,13 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
     apt install -y systemd-resolved
     systemctl enable systemd-resolved --now
 
+    if [ -d /etc/NetworkManager ]; then
+        if write_c "[main]
+                    rc-manager=unmanaged" /etc/NetworkManager/conf.d/98-rc-manager.conf; then
+            systemctl reload NetworkManager.service
+        fi
+    fi
+
     if sed_c /etc/systemd/resolved.conf \
           -e 's/^\s*#\?\s*DNS=.*/DNS=9.9.9.9/' \
           -e 's/^\s*#\?\s*MulticastDNS=.*/MulticastDNS=no/' \
@@ -106,7 +101,7 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
         systemctl restart systemd-resolved
     fi
 
-    if [ ! -L /etc/resolv.conf ]; then
+    if [ "$(readlink -f /etc/resolv.conf)" != "/run/systemd/resolve/resolv.conf" ]; then
         rm -f /etc/resolv.conf
         ln -s /run/systemd/resolve/resolv.conf /etc/resolv.conf
     fi
