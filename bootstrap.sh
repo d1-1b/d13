@@ -353,6 +353,7 @@ EOF
                 IPv6AcceptRA=no
                 DHCP=ipv4" /etc/systemd/network/00-eth0.network; then
 
+        chmod 644 /etc/systemd/network/00-eth0.network
         systemctl enable systemd-networkd --now
 
         ETH0_SET=1
@@ -363,7 +364,7 @@ EOF
         systemctl disable NetworkManager --now
     fi
 
-    if [ "$NETWORKD_CHANGED" -eq 1 ]; then
+    if [ "$ETH0_SET" -eq 1 ]; then
 
         systemctl restart systemd-networkd
     fi

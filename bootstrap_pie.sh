@@ -455,6 +455,7 @@ EOF
                 LinkLocalAddressing=no
                 IPv6AcceptRA=no" /etc/systemd/network/00-eth0.network; then
 
+        chmod 644 /etc/systemd/network/00-eth0.network
         systemctl enable systemd-networkd --now
 
         ETH0_SET=1
