@@ -444,13 +444,7 @@ EOF
     ###########
     # Ethernet
 
-    if [ -d /etc/NetworkManager ]; then
-        if write_c "[keyfile]
-                    unmanaged-devices=interface-name:eth0" /etc/NetworkManager/conf.d/99-unmanaged-eth0.conf; then
-            systemctl reload NetworkManager
-        fi
-    fi
-
+    ETH0_SET=0
     if write_c "[Match]
                 Name=eth0
 
@@ -462,12 +456,21 @@ EOF
                 IPv6AcceptRA=no" /etc/systemd/network/00-eth0.network; then
 
         systemctl enable systemd-networkd --now
-        systemctl reload systemd-networkd
+
+        ETH0_SET=1
     fi
 
     if [ -d /etc/NetworkManager ]; then
 
         systemctl disable NetworkManager --now
+    fi
+
+    if [ "$NETWORKD_CHANGED" -eq 1 ]; then
+
+        systemctl restart systemd-networkd
+    fi
+
+    if [ -d /etc/NetworkManager ]; then
 
         apt purge -y network-manager network-manager-gnome
         apt purge -y netplan.io cloud-init
