@@ -307,31 +307,20 @@ EOF
 
     if ! systemctl is-active --quiet xrdp; then
         systemctl enable xrdp --now
+    fi
 
-        xrdp_changed=0
-        sesman_changed=0
+    if sed_c /etc/xrdp/xrdp.ini \
+        -e '0,/^port=3389$/s//port=vsock:\/\/-1:3389/' \
+        -e 's/^security_layer=.*/security_layer=rdp/' \
+        -e 's/^crypt_level=.*/crypt_level=none/'
+    then
+        systemctl restart xrdp
+    fi
 
-        if sed_c /etc/xrdp/xrdp.ini \
-            -e '0,/^port=3389$/s//port=vsock:\/\/-1:3389/' \
-            -e 's/^security_layer=.*/security_layer=rdp/' \
-            -e 's/^crypt_level=.*/crypt_level=none/'
-        then
-            xrdp_changed=1
-        fi
-
-        if sed_c /etc/xrdp/sesman.ini \
-            's/^FuseMountName=.*/FuseMountName=shared-drives/'
-        then
-            sesman_changed=1
-        fi
-
-        if [ "$xrdp_changed" -eq 1 ]; then
-            systemctl restart xrdp
-        fi
-
-        if [ "$sesman_changed" -eq 1 ]; then
-            systemctl restart xrdp-sesman
-        fi
+    if sed_c /etc/xrdp/sesman.ini \
+        's/^FuseMountName=.*/FuseMountName=shared-drives/'
+    then
+        systemctl restart xrdp-sesman
     fi
 
     echo hv_sock > /etc/modules-load.d/hv_sock.conf
