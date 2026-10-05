@@ -399,6 +399,9 @@ EOF
     rfkill unblock wifi
 
     apt install -y iwd
+    mkdir -p /etc/iwd /var/lib/iwd
+    write_c "[General]
+             EnableNetworkConfiguration=false" /etc/iwd/main.conf
     systemctl enable --now iwd
 
     write_c "[Match]
@@ -408,6 +411,7 @@ EOF
              UseDNS=yes
              UseGateway=yes
              UseRoutes=yes
+             RouteMetric=100
 
              [Network]
              LinkLocalAddressing=no
@@ -506,7 +510,7 @@ EOF
         systemctl disable NetworkManager --now
     fi
 
-    if [ "$ETH0_SET" -eq 1 ]; then
+    if [ "$ETH0_SET" -eq 1 ] || [ "$WIFI_CHANGED" -eq 1 ]; then
 
         systemctl restart systemd-networkd
     fi
