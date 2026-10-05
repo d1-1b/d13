@@ -234,13 +234,24 @@ table inet filter {
         type nat hook prerouting priority dstnat;
     }
 
-    # --- Services ---
-    set services {
+    # Grants DNS/VPN/Masquerade
+    set l3_clients {
+        type ipv4_addr;
+        flags interval;
+        elements = {
+            # --- LAN Clients ---
+            192.168.0.0/24
+        }
+    }
+
+    set admin_services {
         type ifname . inet_proto . inet_service;
         flags constant;
         elements = {
-            "eth0" . tcp . 22,
-            "eth0" . tcp . 3389,
+            tcp . 22,
+            tcp . 3389,
+            udp . 3389,
+            tcp . 8080,
         }
     }
 
@@ -252,15 +263,25 @@ table inet filter {
         # Loopback
         iif "lo" accept
 
-        # ICMP
-        ip protocol icmp accept
-
         # Connection tracking
         ct state established,related accept
         ct state invalid drop
 
-        # Services
-        iifname . ip protocol . th dport @services accept
+        # DHCP (host -> WAN)
+        iifname "wlan1" udp sport 67 udp dport 68 accept
+
+        # DHCP (LAN → host)
+        iifname "wlan2" udp sport 68 udp dport 67 accept
+
+        # DNS (LAN → host)
+        iifname "wlan2" udp dport 53 accept
+        iifname "wlan2" tcp dport 53 accept
+
+        # ICMP (LAN → host)
+        iifname "wlan2" icmp type echo-request accept
+
+        # LAN admin services (admin clients → host)
+        iifname "wlan2" ip protocol . th dport @admin_services accept
     }
 
     # --- OUTPUT ---
@@ -273,12 +294,44 @@ table inet filter {
     chain forward {
         type filter hook forward priority filter;
         policy drop;
+
+        # Connection tracking
+        ct state established,related accept
+        ct state invalid drop
+
+        # Block QUIC
+        iifname "br0" udp dport 443 drop
+
+        # Block DNS-over-QUIC (DoQ)
+        iifname "br0" udp dport { 784, 8853 } drop
+
+        # Block DNS-over-TLS (DoT)
+        iifname "br0" tcp dport 853 drop
+        iifname "br0" udp dport 853 drop
+
+        # Block DNS-over-HTTPS (DoH)
+        iifname "br0" ip daddr @doh_ips tcp dport 443 drop
+
+        # VPN Clamp Maximum Segment Size (LAN Clients)
+        iifname "br0" ip saddr @l3_clients oifname "vpn0" tcp flags syn tcp option maxseg size set rt mtu
+
+        # VPN allow (LAN Clients → VPN)
+        iifname "br0" ip saddr @l3_clients oifname "vpn0" accept
+
+        # Log unknown IPs
+        iifname "br0" \
+        ip saddr != @l3_clients \
+        limit rate 1/minute \
+        log prefix "NFT-L3-FWD " flags all
     }
 
     # --- POST-ROUTING ---
     # --- SNAT / masquerade ---
     chain postrouting {
         type nat hook postrouting priority srcnat;
+
+        # Masquerade (Dynamic SNAT) (LAN Clients → VPN)
+        iifname "br0" ip saddr @l3_clients oifname "vpn0" masquerade
     }
 }
 EOF

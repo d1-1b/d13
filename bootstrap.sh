@@ -237,12 +237,13 @@ table inet filter {
     }
 
     # --- Services ---
-    set services {
+    set admin_services {
         type ifname . inet_proto . inet_service;
         flags constant;
         elements = {
-            "eth0" . tcp . 22,
-            "eth0" . tcp . 3389,
+            tcp . 22,
+            tcp . 3389,
+            udp . 3389,
         }
     }
 
@@ -254,18 +255,18 @@ table inet filter {
         # Loopback
         iif "lo" accept
 
-        # DHCP (LAN → host)
-        iifname "eth0" udp sport 67 udp dport 68 accept
-
-        # ICMP
-        iifname "eth0" icmp type echo-request accept
-
         # Connection tracking
         ct state established,related accept
         ct state invalid drop
 
-        # Services
-        iifname . ip protocol . th dport @services accept
+        # DHCP (LAN → host)
+        iifname "eth0" udp sport 67 udp dport 68 accept
+
+        # ICMP (LAN → host)
+        iifname "eth0" icmp type echo-request accept
+
+        # Admin services (admin clients → host)
+        iifname "eth0" ip protocol . th dport @admin_services accept
     }
 
     # --- OUTPUT ---
