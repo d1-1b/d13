@@ -4,7 +4,6 @@
 # Init
 
 # wget -O "$HOME/bootstrap.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap.sh?nocache=$(date +%s)"
-# chmod +x ~/bootstrap.sh
 
 script_name="$(basename "$0")"
 
@@ -222,7 +221,7 @@ if [ "$script_name" = "bootstrap.sh" ]; then
     ###########
     # Nftables
 
-    systemctl enable nftables --now
+    systemctl enable nftables
 
     if cat_c /etc/nftables.conf << 'EOF'
 #!/usr/sbin/nft -f
@@ -289,7 +288,7 @@ table inet filter {
 }
 EOF
     then
-        systemctl reload nftables
+        nft -f /etc/nftables.conf
     fi
 
     ######

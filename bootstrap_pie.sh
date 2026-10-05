@@ -3,11 +3,8 @@
 #######
 # Init
 
-# Disable powersave
-# sudo ethtool --set-eee eth0 eee off
-
 # wget -O "$HOME/bootstrap_pie.sh" "https://raw.githubusercontent.com/d1-1b/d13/refs/heads/main/bootstrap_pie.sh?nocache=$(date +%s)"
-# chmod +x ~/bootstrap_pie.sh
+# sudo ethtool --set-eee eth0 eee off
 
 script_name="$(basename "$0")"
 
@@ -222,7 +219,7 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
     ###########
     # Nftables
 
-    systemctl enable nftables --now
+    systemctl enable nftables
 
     if cat_c /etc/nftables.conf << 'EOF'
 #!/usr/sbin/nft -f
@@ -286,7 +283,7 @@ table inet filter {
 }
 EOF
     then
-        systemctl reload nftables
+        nft -f /etc/nftables.conf
     fi
 
     ######
