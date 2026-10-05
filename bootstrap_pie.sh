@@ -348,7 +348,7 @@ EOF
           -e 's/^#\?ListenAddress 0\.0\.0\.0.*/ListenAddress 0.0.0.0/' \
           -e 's/^#\?AddressFamily.*/AddressFamily inet/'; then
 
-        systemctl restart sshd
+        systemctl reload sshd
     fi
 
     #######
