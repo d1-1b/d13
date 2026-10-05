@@ -495,10 +495,16 @@ EOF
     if write_c "[Match]
                 Name=eth0
 
+                [DHCP]
+                UseDNS=yes
+                UseGateway=yes
+                UseRoutes=yes
+                RouteMetric=200
+
                 [Network]
-                Address=10.1.1.10/24
                 LinkLocalAddressing=no
-                IPv6AcceptRA=no" /etc/systemd/network/00-eth0.network; then
+                IPv6AcceptRA=no
+                DHCP=ipv4" /etc/systemd/network/00-eth0.network; then
 
         systemctl enable systemd-networkd --now
 
