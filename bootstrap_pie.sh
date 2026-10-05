@@ -12,43 +12,45 @@ script_name="$(basename "$0")"
 # Functions
 
 write_c () {
-    local tmp
-    tmp="$(mktemp)"
-    printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$tmp"
-    if [ -f "$2" ] && cmp -s "$tmp" "$2"; then
+    local content="$1"
+    local file="$2"
+    local tmp="$(mktemp)"
+    printf "%s\n" "$content" | sed 's/^[[:space:]]\+//' > "$tmp"
+    if [ -f "$file" ] && cmp -s "$tmp" "$file"; then
         rm -f "$tmp"
-        return 1   # unchanged
+        return 1
     fi
-    mv "$tmp" "$2"
-    return 0       # changed
+    mv "$tmp" "$file"
+    chmod 644 "$file"
+    return 0
 }
 
 sed_c () {
     local file="$1"
     shift
-    local tmp
-    tmp="$(mktemp)"
+    local tmp="$(mktemp)"
     cp -p "$file" "$tmp"
     sed -i "$@" "$tmp"
     if cmp -s "$tmp" "$file"; then
         rm -f "$tmp"
-        return 1   # unchanged
+        return 1
     fi
     mv "$tmp" "$file"
-    return 0       # changed
+    chmod 644 "$file"
+    return 0
 }
 
 cat_c () {
     local file="$1"
-    local tmp
-    tmp="$(mktemp)"
+    local tmp="$(mktemp)"
     cat > "$tmp"
     if [ -f "$file" ] && cmp -s "$tmp" "$file"; then
         rm -f "$tmp"
-        return 1   # unchanged
+        return 1
     fi
     mv "$tmp" "$file"
-    return 0       # changed
+    chmod 644 "$file"
+    return 0
 }
 
 #######
@@ -300,26 +302,26 @@ table inet filter {
         ct state invalid drop
 
         # Block QUIC
-        iifname "br0" udp dport 443 drop
+        iifname "wlan2" udp dport 443 drop
 
         # Block DNS-over-QUIC (DoQ)
-        iifname "br0" udp dport { 784, 8853 } drop
+        iifname "wlan2" udp dport { 784, 8853 } drop
 
         # Block DNS-over-TLS (DoT)
-        iifname "br0" tcp dport 853 drop
-        iifname "br0" udp dport 853 drop
+        iifname "wlan2" tcp dport 853 drop
+        iifname "wlan2" udp dport 853 drop
 
         # Block DNS-over-HTTPS (DoH)
-        iifname "br0" ip daddr @doh_ips tcp dport 443 drop
+        #iifname "wlan2" ip daddr @doh_ips tcp dport 443 drop
 
         # VPN Clamp Maximum Segment Size (LAN Clients)
-        iifname "br0" ip saddr @l3_clients oifname "vpn0" tcp flags syn tcp option maxseg size set rt mtu
+        iifname "wlan2" ip saddr @l3_clients oifname "vpn0" tcp flags syn tcp option maxseg size set rt mtu
 
         # VPN allow (LAN Clients → VPN)
-        iifname "br0" ip saddr @l3_clients oifname "vpn0" accept
+        iifname "wlan2" ip saddr @l3_clients oifname "vpn0" accept
 
         # Log unknown IPs
-        iifname "br0" \
+        iifname "wlan2" \
         ip saddr != @l3_clients \
         limit rate 1/minute \
         log prefix "NFT-L3-FWD " flags all
@@ -331,7 +333,7 @@ table inet filter {
         type nat hook postrouting priority srcnat;
 
         # Masquerade (Dynamic SNAT) (LAN Clients → VPN)
-        iifname "br0" ip saddr @l3_clients oifname "vpn0" masquerade
+        iifname "wlan2" ip saddr @l3_clients oifname "vpn0" masquerade
     }
 }
 EOF
@@ -491,12 +493,9 @@ EOF
 
                 [Network]
                 Address=10.1.1.10/24
-                Gateway=10.1.1.1
-                DNS=10.1.1.1
                 LinkLocalAddressing=no
                 IPv6AcceptRA=no" /etc/systemd/network/00-eth0.network; then
 
-        chmod 644 /etc/systemd/network/00-eth0.network
         systemctl enable systemd-networkd --now
 
         ETH0_SET=1
@@ -507,7 +506,7 @@ EOF
         systemctl disable NetworkManager --now
     fi
 
-    if [ "$NETWORKD_CHANGED" -eq 1 ]; then
+    if [ "$ETH0_SET" -eq 1 ]; then
 
         systemctl restart systemd-networkd
     fi

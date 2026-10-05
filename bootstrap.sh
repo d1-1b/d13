@@ -11,43 +11,45 @@ script_name="$(basename "$0")"
 # Functions
 
 write_c () {
-    local tmp
-    tmp="$(mktemp)"
-    printf "%s\n" "$1" | sed 's/^[[:space:]]\+//' > "$tmp"
-    if [ -f "$2" ] && cmp -s "$tmp" "$2"; then
+    local content="$1"
+    local file="$2"
+    local tmp="$(mktemp)"
+    printf "%s\n" "$content" | sed 's/^[[:space:]]\+//' > "$tmp"
+    if [ -f "$file" ] && cmp -s "$tmp" "$file"; then
         rm -f "$tmp"
-        return 1   # unchanged
+        return 1
     fi
-    mv "$tmp" "$2"
-    return 0       # changed
+    mv "$tmp" "$file"
+    chmod 644 "$file"
+    return 0
 }
 
 sed_c () {
     local file="$1"
     shift
-    local tmp
-    tmp="$(mktemp)"
+    local tmp="$(mktemp)"
     cp -p "$file" "$tmp"
     sed -i "$@" "$tmp"
     if cmp -s "$tmp" "$file"; then
         rm -f "$tmp"
-        return 1   # unchanged
+        return 1
     fi
     mv "$tmp" "$file"
-    return 0       # changed
+    chmod 644 "$file"
+    return 0
 }
 
 cat_c () {
     local file="$1"
-    local tmp
-    tmp="$(mktemp)"
+    local tmp="$(mktemp)"
     cat > "$tmp"
     if [ -f "$file" ] && cmp -s "$tmp" "$file"; then
         rm -f "$tmp"
-        return 1   # unchanged
+        return 1
     fi
     mv "$tmp" "$file"
-    return 0       # changed
+    chmod 644 "$file"
+    return 0
 }
 
 #######
@@ -342,7 +344,6 @@ EOF
                 IPv6AcceptRA=no
                 DHCP=ipv4" /etc/systemd/network/00-eth0.network; then
 
-        chmod 644 /etc/systemd/network/00-eth0.network
         systemctl enable systemd-networkd --now
 
         ETH0_SET=1
