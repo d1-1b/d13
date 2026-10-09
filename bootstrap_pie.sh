@@ -62,10 +62,10 @@ if [ "$script_name" = "bootstrap_pie.sh" ]; then
     # ROOT PHASE
 
     if [ "$EUID" -ne 0 ]; then
-        exec sudo bash "$0" "$@"
+        exec pkexec bash "$0" "$@"
     fi
 
-    user_name="$(id -un "$SUDO_UID")"
+    user_name="$(id -un "$PKEXEC_UID")"
 
     #######
     # Sudo
@@ -535,6 +535,8 @@ EOF
     # End
 
     mv "$0" "/home/$user_name/configure_pie.sh"
+    read -p "Press Enter to poweroff: " _
+    systemctl poweroff
 
 else
 
@@ -618,4 +620,7 @@ else
     if [ "$SHELL" != "/usr/bin/fish" ]; then
         chsh -s /usr/bin/fish "$USER"
     fi
+
+    read -p "Press Enter to logout: " _
+    xfce4-session-logout -l
 fi
