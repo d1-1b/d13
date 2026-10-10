@@ -247,7 +247,7 @@ table inet filter {
     }
 
     set admin_services {
-        type ifname . inet_proto . inet_service;
+        type inet_proto . inet_service;
         flags constant;
         elements = {
             tcp . 22,
