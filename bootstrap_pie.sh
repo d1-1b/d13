@@ -472,7 +472,6 @@ EOF
                  Description=Start iwd AP on wlan2
                  After=iwd.service sys-subsystem-net-devices-wlan2.device
                  Requires=iwd.service
-                 BindsTo=sys-subsystem-net-devices-wlan2.device
 
                  [Service]
                  Type=oneshot
@@ -485,7 +484,7 @@ EOF
                  WantedBy=multi-user.target" /etc/systemd/system/wlan2-ap.service
 
         systemctl daemon-reload
-        systemctl restart wlan2-ap.service
+        systemctl enable wlan2-ap.service
     fi
 
     ###########
@@ -530,6 +529,14 @@ EOF
         rm -rf /etc/netplan
         rm -rf /etc/cloud
     fi
+
+    #######
+    # XFCE
+
+    mkdir -p /etc/lightdm/lightdm.conf.d
+    write_c "[Seat:*]
+             user-session=xfce
+             autologin-session=xfce" /etc/lightdm/lightdm.conf.d/50-xfce.conf
 
     ######
     # End
